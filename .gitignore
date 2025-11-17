@@ -5,6 +5,15 @@ kanji/
 __pycache__/
 *.pyc
 
+# AI Model Weights (Do not commit heavy files)
+*.pt
+*.pth
+*.bin
+
+# Sudachi Dictionary files (in case they are not in venv)
+*.dic
+*.model
+
 # OS-specific
 .DS_Store
 
