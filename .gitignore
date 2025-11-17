@@ -1,0 +1,18 @@
+# Python virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS-specific
+.DS_Store
+
+# IDE settings
+.vscode/
+.idea/
+
+# AI Model Weights (Do not commit heavy files)
+*.pt
+*.pth
+*.bin
