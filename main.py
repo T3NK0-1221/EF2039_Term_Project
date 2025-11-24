@@ -1,230 +1,252 @@
 # main.py
 # Project Main pipeline
-# (OCR, AI Sentence Splitting, and Pre-processing Rules Applied)
-# import the functions of translate.py and extract.py
-# process the sentences that user input
-# create csv file for anki
+# (OCR, AI Sentence Splitting, Dictionary Lookup, and Anki CSV Generation)
 
-# (1. Necessary module import)
 import csv
 import os
 import easyocr
-import pysbd  # Use independent pysbd
-import re     # Use regex for pre-processing
+import pysbd
+import re
+from dict_helper import get_jamdict
 
-# (1-1. Load AI Models) 
-# Load all heavy AI models once at the start
+# (1. Global Configuration)
+# 1: Context (Context Style) - Save to CSV O
+# 2: Word (Word Style)       - Save to CSV O
+# 3: Translator (Simple Translator) - No CSV Save (Display Only)
+CURRENT_CARD_STYLE = '2' 
+
+# (2. Load AI Models)
 print("Loading AI models... (This may take a moment)")
 try:
-    from translate import translate_japanese_to_english # translation function
-    from extract import extract_kanji_words   # extract funcion
+    from translate import translate_japanese_to_english
+    from extract import extract_kanji_words
     
-    # Load OCR model (Reader)
-    # 'ja' (Japanese) and 'en' (English)
-    # gpu=False (Using CPU)
     OCR_READER = easyocr.Reader(['ja', 'en'], gpu=False) 
-    
-    # Load independent 'pysbd' segmenter
     SENTENCE_SPLITTER_NLP = pysbd.Segmenter(language="ja", clean=False)
+    
+    print("Loading Dictionary (Jamdict)...")
+    JMD = get_jamdict()
+    if JMD:
+        print("✅ Dictionary loaded successfully.")
+    else:
+        print("⚠️ Dictionary failed to load.")
     
     print("All models loaded successfully.")
 
-except ImportError as e:
-    print(f"Error importing module: {e}")
-    print("Please check your 'requirements.txt' and installations.")
-    exit()
 except Exception as e:
     print(f"Error loading models: {e}")
     exit()
 
-
-# (2. Constant Definition)
-# (This section is unchanged)
-# Declaration of csv file name
+# (3. File Configuration)
 OUTPUT_CSV_FILE = "anki_deck.csv"
-FIELDNAMES = ["Front", "Back"] # Anki Card 'Front', 'Back'
+FIELDNAMES = ["Front", "Back"]
 
 def initialize_csv():
-    """If there is no previous csv file, add Header for Front and Back."""
-    # (This function is unchanged)
+    """Creates a new empty file if CSV doesn't exist (no header)."""
     if not os.path.exists(OUTPUT_CSV_FILE):
-        with open(OUTPUT_CSV_FILE, mode='w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-            writer.writeheader()
+        with open(OUTPUT_CSV_FILE, mode='w', encoding='utf-8-sig') as f:
+            pass 
         print(f"Created new file: {OUTPUT_CSV_FILE}")
 
-def add_to_csv(word, example_sentence, translation):
-    # (This function is unchanged)
-    
-    # (3. Formation of Anki card)
-    # Front: Kanji word (ex: 書籍)
-    front_text = word
-
-    # (3-1. Bold Text)
-    # (example_sentence) -> (word) <b> tagging
-    # ex: "本電子書籍は..." -> "本電子<b>書籍</b>は..."
-    try:
-        highlighted_sentence = example_sentence.replace(word, f"<b>{word}</b>")
-    except:
-        highlighted_sentence = example_sentence # error -> Using Original sentence
-
-    # Back: Bold Original Sentence (<br>) Translated Sentence
-    back_text = f"{highlighted_sentence}<br>{translation}"
-
-    # (4. data file CSV append)
+def add_to_csv(front_text, back_text):
+    """Function to append content to CSV file."""
     with open(OUTPUT_CSV_FILE, mode='a', newline='', encoding='utf-8-sig') as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writerow({"Front": front_text, "Back": back_text})
 
-# (5. Core Processing Function)
-def process_sentence(sentence):
-    """
-    Process one sentence: translate, extract, and save to CSV.
-    This is a shared function used by both text and OCR modes.
-    """
+def lookup_word_meaning(word):
+    """Dictionary lookup and tag removal."""
+    if not JMD: return "Dictionary not loaded."
     try:
-        # (5-1. Excution of AI model pipeline)
-        
-        # 1. 2nd module calling -> translation
-        print("Translating...")
-        translation = translate_japanese_to_english(sentence)
+        result = JMD.lookup(word)
+        if result.entries:
+            raw_definition = str(result.entries[0].senses[0])
+            clean_definition = raw_definition.split("((")[0].strip()
+            return clean_definition
+        else:
+            return "No definition found."
+    except Exception as e:
+        return f"Error: {e}"
 
-        # (Print translation result to console)
-        print(f"Translation: {translation}")
-        
-        # 2. 3rd module calling -> extract kanji
+#Integrated Text Preprocessing Function
+def preprocess_text(text):
+    """
+    Pre-processes the input text to clean it up.
+    1. Remove brackets (「」『』) -> Improves translation quality.
+    2. Fix sentence endings (Add '。' after 'ます'/'です' if missing).
+    """
+    # 1. Remove brackets
+    cleaned = re.sub(r'[「」『』]', '', text)
+    
+    # 2. Fix period
+    cleaned = re.sub(r'(ます|です)(?![。！？\n])', r'\1。', cleaned)
+    
+    return cleaned.strip()
+
+def process_sentence(sentence):
+    global CURRENT_CARD_STYLE
+
+    try:
+        # --- [Style 3] Simple Translator Mode (No CSV Save) ---
+        if CURRENT_CARD_STYLE == '3':
+            print("Translating...")
+            translation = translate_japanese_to_english(sentence)
+            
+            # Output to screen only (No Save)
+            print("\n" + "="*20 + " [Translator Result] " + "="*20)
+            print(f"🇯🇵 Original: {sentence}")
+            print(f"🇺🇸 English : {translation}")
+            print("="*60 + "\n")
+            return True
+
+        # --- [Style 1 & 2] Card Generation Mode ---
         print("Extracting Kanji words...")
         kanji_words = extract_kanji_words(sentence)
         
-        # 3. Result
         if not kanji_words:
-            print("No meaningful Kanji words found in this sentence.")
+            print("No meaningful Kanji words found.")
             return False
             
         print(f"Found {len(kanji_words)} words: {', '.join(kanji_words)}")
         
-        # 4. Save in the CSV
+        # Translation needed only for Style 1
+        translation = ""
+        if CURRENT_CARD_STYLE == '1':
+            print("Translating for context...")
+            translation = translate_japanese_to_english(sentence)
+
         for word in kanji_words:
-            add_to_csv(word, sentence, translation)
+            definition = lookup_word_meaning(word)
+            print(f" - {word}: {definition}")
+            
+            # --- [Style 1] Context Style ---
+            if CURRENT_CARD_STYLE == '1':
+                try:
+                    # Front: Highlight word in sentence
+                    front_text = sentence.replace(word, f"<b>{word}</b>")
+                except:
+                    front_text = sentence
+                
+                back_text = (
+                    f"<b>[Meaning]</b> {definition}<br><hr>"
+                    f"<b>[Trans]</b> {translation}"
+                )
+                add_to_csv(front_text, back_text)
+
+            # --- [Style 2] Word Style ---
+            elif CURRENT_CARD_STYLE == '2':
+                add_to_csv(word, definition)
         
-        print(f"Successfully added {len(kanji_words)} card(s) to {OUTPUT_CSV_FILE}.")
+        print(f"✅ Added {len(kanji_words)} cards to CSV.")
         return True
-        
+
     except Exception as e:
-        print(f"\nAn error occurred during processing: {e}")
+        print(f"Error processing sentence: {e}")
         return False
 
-# (6. Mode 1: Text Input)
+# --- Execution Modes ---
 def run_text_mode():
-    """Handles the loop for manual text input."""
     print("\n--- 📝 Text Input Mode ---")
-    print("Enter a Japanese sentence. (Type 'q' or 'exit' to quit)")
-    
+    print("Enter a Japanese sentence. ('q' to quit)")
     while True:
-        try:
-            # 1. User input(Japanese Sentence block)
-            sentence_block = input("\nSentence: ")
-            
-            # 2. Check Command for quit
-            if sentence_block.lower() in ['q', 'exit']: break
-            if not sentence_block: continue
+        sentence_block = input("\nSentence: ").strip()
+        if sentence_block.lower() in ['q', 'exit']: break
+        if not sentence_block: continue
 
-            # (3. Pre-processing: Add '。' after 'ます' or 'です' if missing)
-            # This rule helps the AI split conversational text correctly.
-            sentence_block = re.sub(r'(ます|です)(?![。！？\n])', r'\1。', sentence_block)
-            
-            # (4. Split using 'pysbd.segment()' method)
-            sentences_list = SENTENCE_SPLITTER_NLP.segment(sentence_block)
+        #Use integrated preprocessing function
+        sentence_block = preprocess_text(sentence_block)
+        
+        sentences_list = SENTENCE_SPLITTER_NLP.segment(sentence_block)
 
-            # (5. Process each sentence found by the AI)
-            for sentence in sentences_list:
-                cleaned_sent = str(sentence).strip()
-                if cleaned_sent:
-                    print(f"\n--- Processing Sub-sentence: [{cleaned_sent}] ---")
-                    process_sentence(cleaned_sent)
-            
-        except KeyboardInterrupt:
-            print("\nExiting program. Goodbye!")
-            break
-        except Exception as e:
-            print(f"\nAn error occurred: {e}")
-            print("Please try again.")
+        for sentence in sentences_list:
+            cleaned = str(sentence).strip()
+            if cleaned:
+                if CURRENT_CARD_STYLE != '3':
+                    print(f"\n--- Processing: [{cleaned}] ---")
+                process_sentence(cleaned)
 
-# (7. Mode 2: Image (OCR) Input)
 def run_ocr_mode():
-    """Handles the loop for image path input and OCR processing."""
     print("\n--- 🖼️ Image (OCR) Mode ---")
-    print("Enter the path to your image. (Type 'q' or 'exit' to quit)")
-    
+    print("Enter image path. ('q' to quit)")
     while True:
-        try:
-            # 1. User input(Image Path)
-            image_path = input("\nImage Path: ").strip().strip('"')
+        image_path = input("\nImage Path: ").strip().strip('"')
+        if image_path.lower() in ['q', 'exit']: break
+        if not os.path.exists(image_path):
+            print("File not found.")
+            continue
             
-            # 2. Check Command for quit
-            if image_path.lower() in ['q', 'exit']: break
-            if not os.path.exists(image_path):
-                print("Error: File not found. Please check the path.")
-                continue
-            
-            # 3. Excution of OCR
-            results = OCR_READER.readtext(image_path, paragraph=True)
-            if not results:
-                print("No text detected in the image.")
-                continue
-            
-            full_text = " ".join([res[1] for res in results])
-            print(f"--- OCR Result --- \n{full_text}\n--------------------")
+        print("Reading image...")
+        results = OCR_READER.readtext(image_path, paragraph=True)
+        if not results:
+            print("No text detected.")
+            continue
+        
+        full_text = " ".join([res[1] for res in results])
+        print(f"--- OCR Result --- \n{full_text}\n--------------------")
 
-            # (4. Pre-processing: Add '。' after 'ます' or 'です' if missing)
-            sentence_block = re.sub(r'(ます|です)(?![。！？\n])', r'\1。', full_text)
-            
-            # (5. Split using 'pysbd.segment()' method)
-            sentences_list = SENTENCE_SPLITTER_NLP.segment(sentence_block)
-            
-            # (6. Process each sentence found by the AI)
-            for sentence in sentences_list:
-                cleaned_sent = str(sentence).strip()
-                if cleaned_sent:
-                    print(f"\n--- Processing Sub-sentence: [{cleaned_sent}] ---")
-                    process_sentence(cleaned_sent)
-            
-        except KeyboardInterrupt:
-            print("\nExiting program. Goodbye!")
-            break
-        except Exception as e:
-            print(f"\nAn error occurred in OCR mode: {e}")
+        #Use integrated preprocessing function
+        sentence_block = preprocess_text(full_text)
+        
+        sentences_list = SENTENCE_SPLITTER_NLP.segment(sentence_block)
+        
+        for sentence in sentences_list:
+            cleaned = str(sentence).strip()
+            if cleaned:
+                if CURRENT_CARD_STYLE != '3':
+                    print(f"\n--- Processing: [{cleaned}] ---")
+                process_sentence(cleaned)
+
+def select_card_style():
+    global CURRENT_CARD_STYLE
+    print("\n" + "="*55)
+    print("📇 Select Mode")
+    print("  [1] Context Card (Front: Sentence / Back: Detail) -> Save CSV")
+    print("  [2] Word Card    (Front: Word     / Back: Meaning) -> Save CSV")
+    print("  [3] Translator   (No CSV, Just Translate)          -> Display Only")
+    print("="*55)
+    
+    choice = input("Choice (1, 2, or 3): ").strip()
+    if choice in ['1', '2', '3']:
+        CURRENT_CARD_STYLE = choice
+        styles = {'1': 'Context Card', '2': 'Word Card', '3': 'Translator Tool'}
+        print(f"✅ Mode set to: {styles[choice]}")
+    else:
+        print("⚠️ Invalid choice. Defaulting to [2] Word Card.")
+        CURRENT_CARD_STYLE = '2'
 
 def main():
-    """main function (now a mode selector)"""
-    # If there is no previous csv file, add Header for Front and Back.
     initialize_csv()
     
     print("--- 🎌 Anki Kanji Card Builder 🎌 ---")
-    print(f"Cards will be saved to: {OUTPUT_CSV_FILE}")
     
-    # (8. Mode Selection Loop)
+    select_card_style()
+    
     try:
         while True:
-            print("\n" + "="*30)
-            print("Select mode:")
+            print("\n" + "-"*30)
+            styles = {'1': 'Context Card', '2': 'Word Card', '3': 'Translator Tool'}
+            print(f"Current Mode: [{styles[CURRENT_CARD_STYLE]}]")
+            print("Select Input Mode:")
             print("  [1] Type text manually")
             print("  [2] Use image (OCR)")
+            print("  [c] Change Mode")
             print("  [q] Quit")
-            mode = input("Choice (1, 2, or q): ").strip().lower()
+            
+            mode = input("Choice: ").strip().lower()
 
             if mode == '1':
                 run_text_mode()
             elif mode == '2':
                 run_ocr_mode()
+            elif mode == 'c':
+                select_card_style()
             elif mode == 'q':
                 print("Exiting program. Goodbye!")
                 break
             else:
-                print("Invalid choice. Please enter 1, 2, or q.")
+                print("Invalid choice.")
     except KeyboardInterrupt:
         print("\nExiting program. Goodbye!")
 
-# --- Enable the main() function to operate only when this script is executed directly ---
 if __name__ == "__main__":
     main()

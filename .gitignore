@@ -1,16 +1,22 @@
-# Python virtual environment
+# Python virtual environment(kanji)
 kanji/
+env/
+.env
+
+# 2. database
+jamdict.db
+*.db
 
 # Python cache
 __pycache__/
 *.pyc
 
-# AI Model Weights (Do not commit heavy files)
+# AI Model Weights
 *.pt
 *.pth
 *.bin
 
-# Sudachi Dictionary files (in case they are not in venv)
+# Sudachi Dictionary files
 *.dic
 *.model
 
@@ -21,7 +27,14 @@ __pycache__/
 .vscode/
 .idea/
 
-# AI Model Weights (Do not commit heavy files)
+# AI Model Weights
 *.pt
 *.pth
 *.bin
+
+#results
+anki_deck.csv
+anki_deck_*.csv
+
+# test file
+test*

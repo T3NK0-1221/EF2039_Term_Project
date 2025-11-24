@@ -1,63 +1,89 @@
 # translate.py
-# (Program description: Using Hugging Face MarianMT model 
-#  Ja -> En translation
+# (Program description: Japanese -> English translation pipeline 
+#  using Hugging Face MarianMT model with Hallucination Filter)
 
-# 1. Import necessary library
 from transformers import MarianMTModel, MarianTokenizer
 
-# (Declare model, model and tokenizer load)
-# 'Helsinki-NLP/opus-mt-ja-en': Pre-trained model / ja -> en
+# 1. Model Configuration (Model & Tokenizer Load)
+# Load as global variables to avoid reloading overhead on every function call.
+MODEL_NAME = "Helsinki-NLP/opus-mt-ja-en"
+
+print(f"Loading translation model: {MODEL_NAME}...")
 try:
-    print("Loading model and tokenizer...")
-    MODEL_NAME = "Helsinki-NLP/opus-mt-ja-en"
     tokenizer = MarianTokenizer.from_pretrained(MODEL_NAME)
     model = MarianMTModel.from_pretrained(MODEL_NAME)
-    print("Model and tokenizer loaded successfully.")
+    print("✅ Model and tokenizer loaded successfully.")
 except Exception as e:
-    print(f"Error loading model: {e}")
+    print(f"❌ Error loading model: {e}")
     exit()
+
+# 2. Noise Filter List
+# Filters out subtitle tags/artifacts (hallucinations) that the AI sometimes 
+# outputs instead of a translation (common in models trained on subtitles).
+NOISE_WORDS = [
+    "(Laughter)", "(Applause)", "(Music)", "(Cheering)", 
+    "(Video)", "(Audio)", "(Silence)", "(laughter)", "(applause)"
+]
 
 def translate_japanese_to_english(text_to_translate):
     """
-    Translate Japanese text to English
-
+    Translate Japanese text to English.
+    Includes a filter for AI hallucinations (e.g., "(Laughter)").
+    
     Args:
-        text_to_translate (str): japanese sentence
-
+        text_to_translate (str): The Japanese sentence to translate.
+        
     Returns:
-        str: translated english sentence
+        str: The translated English sentence or an error message.
     """
     
-    # (Translation pipeline)
-    # 1. 텍스트를 모델이 이해할 수 있는 숫자(토큰)로 변환 (토크나이징)
-    #    return_tensors="pt"는 PyTorch 텐서(데이터 묶음)로 반환하라는 의미입니다.
-    tokenized_text = tokenizer(text_to_translate, return_tensors="pt", padding=True)
-    
-    # 2. 모델을 사용해 번역된 토큰 생성 (추론)
-    translated_tokens = model.generate(**tokenized_text)
-    
-    # 3. 번역된 숫자(토큰)를 다시 사람이 읽을 수 있는 텍스트로 변환 (디코딩)
-    translation = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
-    
-    return translation
+    # Check for empty input
+    if not text_to_translate or not text_to_translate.strip():
+        return ""
 
-# --- test ---
+    try:
+        # (Translation pipeline)
+        
+        # 1. Tokenization 
+        # (Added `truncation=True` to prevent errors with overly long sequences)
+        tokenized_text = tokenizer(text_to_translate, return_tensors="pt", padding=True, truncation=True)
+        
+        # 2. Inference (Generate translation)
+        translated_tokens = model.generate(**tokenized_text)
+        
+        # 3. Decoding (Convert tokens back to text)
+        translation = tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
+        
+        # --- [Noise Filtering Logic] ---
+        clean_result = translation.strip()
+        
+        # Case 1: If the result is ONLY a noise word (e.g., "(Laughter)")
+        # Treat it as a failure and return the context error with original text.
+        if clean_result in NOISE_WORDS:
+            return f"[Context Error] {text_to_translate}"
+            
+        # Case 2: If noise is mixed within a valid sentence -> Remove the noise.
+        for noise in NOISE_WORDS:
+            clean_result = clean_result.replace(noise, "")
+            
+        return clean_result.strip()
+
+    except Exception as e:
+        print(f"Translation logic error: {e}")
+        return "[Translation Failed]"
+
+# --- Test Block ---
 if __name__ == "__main__":
-    # Example
-    test_sentence_1 = "私は学生です。"
-    test_sentence_2 = "忘れるべきことを忘れることができない者にとって、忘れることは病気ではない。"
+    test_sentences = [
+        "私は学生です。",
+        "忘れるべきことを忘れることができない者にとって、忘れることは病気ではない。",
+        "そして、前世の記憶が蘇った日", # Test sentence that caused errors previously
+    ]
     
     print("--- Translation Test Start ---")
-    
-    # Test 1
-    translated_1 = translate_japanese_to_english(test_sentence_1)
-    print(f"Original (ja): {test_sentence_1}")
-    print(f"Translated (en): {translated_1}")
-    print("-" * 20)
-    
-    # Test 2
-    translated_2 = translate_japanese_to_english(test_sentence_2)
-    print(f"Original (ja): {test_sentence_2}")
-    print(f"Translated (en): {translated_2}")
-    
+    for sent in test_sentences:
+        print(f"JP: {sent}")
+        result = translate_japanese_to_english(sent)
+        print(f"EN: {result}")
+        print("-" * 20)
     print("--- Translation Test End ---")
