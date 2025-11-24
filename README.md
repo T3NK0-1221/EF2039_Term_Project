@@ -76,5 +76,5 @@ python main.py
 3.  Select the generated **`anki_deck.csv`** file.
 4.  Ensure the following settings:
       * **Field Separator:** Comma
-      * **Allow HTML in fields:** ✅ **Checked** (Required for bold formatting).
+      * **Allow HTML in fields:**  **Checked** (Required for bold formatting).
 5.  Click **Import**.
