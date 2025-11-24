@@ -71,10 +71,11 @@ python main.py
 
 ## Importing to Anki
 
-1.  Open Anki on your desktop.
+1.  Open Anki on your desktop. And make the new deck.
 2.  Click **File** -\> **Import**.
 3.  Select the generated **`anki_deck.csv`** file.
 4.  Ensure the following settings:
       * **Field Separator:** Comma
       * **Allow HTML in fields:**  **Checked** (Required for bold formatting).
+      * **Choose Basic Style of Card:** Check the Front and Back card
 5.  Click **Import**.
